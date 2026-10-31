@@ -140,12 +140,23 @@ async function main() {
   const assets = await api('GET', '/repos/' + owner + '/' + REPO + '/releases/' + release.id + '/assets')
   const hasAsset = Array.isArray(assets.data) && assets.data.some((asset) => asset.name === tgzName)
   if (!hasAsset) {
-    const upload = await fetch('https://uploads.github.com/repos/' + owner + '/' + REPO + '/releases/' + release.id + '/assets?name=' + encodeURIComponent(tgzName), {
-      method: 'POST',
-      headers: Object.assign({}, HEADERS, { 'content-type': 'application/octet-stream' }),
-      body: tgz,
-    })
-    if (!upload.ok) throw new Error('asset upload failed: ' + upload.status)
+    let uploaded = false
+    let lastError = null
+    for (let attempt = 0; attempt < 4 && !uploaded; attempt += 1) {
+      try {
+        const upload = await fetch('https://uploads.github.com/repos/' + owner + '/' + REPO + '/releases/' + release.id + '/assets?name=' + encodeURIComponent(tgzName), {
+          method: 'POST',
+          headers: Object.assign({}, HEADERS, { 'content-type': 'application/octet-stream' }),
+          body: tgz,
+        })
+        if (!upload.ok) throw new Error('asset upload failed: ' + upload.status)
+        uploaded = true
+      } catch (error) {
+        lastError = error
+        await new Promise((resolve) => setTimeout(resolve, 900 * (attempt + 1)))
+      }
+    }
+    if (!uploaded) throw lastError || new Error('asset upload failed')
     console.log('  asset uploaded:', tgzName)
   } else {
     console.log('  asset exists:', tgzName)
